@@ -7,7 +7,7 @@
 var Coil = (function(){
 	
 	// Target framerate 
-	var FRAMERATE = 60;
+	var FRAMERATE = 30;
 		
 	// Default dimensions of the world
 	var DEFAULT_WIDTH = 900,
@@ -16,8 +16,6 @@ var Coil = (function(){
 	// Flags if the game should output debug information
 	var DEBUG = URLUtil.queryValue('debug') == '1';
 
-	var TOUCH_INPUT = navigator.userAgent.match( /(iPhone|iPad|iPod|Android)/i );
-	
 	// The number of enemies that may exist at the same time,
 	// this scales depending on difficulty
 	var ENEMY_COUNT = 2;
@@ -58,37 +56,18 @@ var Coil = (function(){
 	var NUMBER_OF_EFFECTS = 10;
 	
 	// The world dimensions
-	var world = { 
-		width: DEFAULT_WIDTH, 
-		height: DEFAULT_HEIGHT 
+	var world = {
+		width: DEFAULT_WIDTH,
+		height: DEFAULT_HEIGHT
 	};
-		
-	// Mouse input tracking
-	var mouse = {
-		// The current position
-		x: 0,
-		y: 0,
-		
-		// The position previous to the current
-		previousX: 0,
-		previousY: 0,
-		
-		// The velocity, based on the difference between
-		// the current and next positions
-		velocityX: 0,
-		velocityY: 0,
-		
-		// Flags if the mouse is currently pressed down
-		down: false
-	};
-	
+
 	var sprites = {
 		bomb: null,
 		enemy: null,
 		enemyDyingA: null,
 		enemyDyingB: null
 	}
-	
+
 	var canvas,
 		context,
 		
@@ -148,8 +127,15 @@ var Coil = (function(){
 		particles = [],
 		enemies = [],
 		effects = [],
-		player;
-	
+		contacts = [];
+
+	var energy = 100;
+	var animatedEnergy = 0;
+	var adjustEnergy = function(offset)
+	{
+		energy = Math.min(Math.max(energy + offset, 0), 100)
+	}
+
 	/**
 	 * 
 	 */
@@ -166,12 +152,12 @@ var Coil = (function(){
 		
 		try {
 			context3d = canvas3d.getContext("webgl") || canvas3d.getContext("experimental-webgl");
-	    } catch(e) {}
+		} catch(e) {}
 		
 		// Is WebGL supported?
-	    if( !!context3d ) {
+		if( !!context3d ) {
 			activate3dEffects();
-	    }
+		}
 		
 		if ( canvas && canvas.getContext ) {
 			context = canvas.getContext('2d');
@@ -206,12 +192,11 @@ var Coil = (function(){
 		else {
 			alert( 'Doesn\'t seem like your browser supports the HTML5 canvas element :(' );
 		}
-	   
 	}
 	
 	function activate3dEffects() {
 		context3d.clearColor(0.0, 0.0, 0.0, 0.0);
-	    
+
 		// Compile our shader program
 		var vertexShader = $( '#vertexShader' ).text();
 		var fragmentShader = $( '#fragmentShader' ).text();
@@ -235,17 +220,12 @@ var Coil = (function(){
 			// render 3d effects
 			if (context3d.getProgramParameter(effectsShaderProgram, context3d.LINK_STATUS)) {
 				effectsEnabled = true;
-				
-				context3d.viewport( 0, 0, 1024, 1024 );
 				context3d.useProgram( effectsShaderProgram );
-				
 				var t0 = context3d.getUniformLocation( effectsShaderProgram, "texture" );
 				context3d.uniform1i( t0, 0 ); 
 				context3d.activeTexture( context3d.TEXTURE0 ); 
 				context3d.bindTexture( context3d.TEXTURE_2D, effectsTexture );
-				
 				canvas3d.style.display = 'block';
-				
 				// Forces the 3D canvas to resize
 				onWindowResizeHandler();
 			}
@@ -392,12 +372,10 @@ var Coil = (function(){
 	}
 	
 	function reset() {
-		player = new Player();
-		player.x = mouse.x;
-		player.y = mouse.y;
-		
+		contacts = [];
+		energy = 100;
+
 		notifications = [];
-		intersections = [];
 		particles = [];
 		enemies = [];
 		effects = [];
@@ -479,13 +457,13 @@ var Coil = (function(){
 			context.globalCompositeOperation = 'lighter';
 			
 			updateMeta();
-			updatePlayer();
+			updateContacts();
 			updateParticles();
 			
 			findIntersections();
 			solveIntersections();
 			
-			renderPlayer();
+			renderContacts();
 			
 			updateEnemies();
 			renderEnemies();
@@ -539,156 +517,164 @@ var Coil = (function(){
 	}
 	
 	function findIntersections() {
-		var i = player.trail.length;
-		
-		var candidates = [];
-		
-		while( i-- ) {
-			var j = player.trail.length;
-			
-			var p1 = player.trail[i];
-			var p2 = player.trail[i+1];
-			
-			while( j-- ) {
-				
-				if ( Math.abs(i-j) > 1 ) {
-					var p3 = player.trail[j];
-					var p4 = player.trail[j + 1];
-					
-					if (p1 && p2 && p3 && p4) {
-						var intersection = findLineIntersection(p1, p2, p3, p4);
-						if ( intersection ) {
-							candidates.push( [ Math.min(i,j), Math.max(i,j), intersection ] );
+		var contact;
+		var c = contacts.length;
+		while(c--)
+		{
+			contact = contacts[c];
+			var i = contact.trail.length;
+
+			var candidates = [];
+
+			while( i-- ) {
+				var j = contact.trail.length;
+
+				var p1 = contact.trail[i];
+				var p2 = contact.trail[i+1];
+
+				while( j-- ) {
+					if ( Math.abs(i-j) > 1 ) {
+						var p3 = contact.trail[j];
+						var p4 = contact.trail[j + 1];
+
+						if (p1 && p2 && p3 && p4) {
+							var intersection = findLineIntersection(p1, p2, p3, p4);
+							if ( intersection ) {
+								candidates.push( [ Math.min(i,j), Math.max(i,j), intersection ] );
+							}
 						}
 					}
 				}
-				
 			}
-		}
-		
-		intersections = [];
-		
-		// Remove duplicates
-		while( candidates.length ) {
-			var i = intersections.length;
-			
-			var candidate = candidates.pop();
-			
-			while( i-- ) {
-				if( candidate && intersections[i] && candidate[0] === intersections[i][0] && candidate[1] === intersections[i][1] ) {
-					candidate = null;
+
+			// Remove duplicates
+			contact.intersections = [];
+			while( candidates.length ) {
+				var i = contact.intersections.length;
+
+				var candidate = candidates.pop();
+
+				while( i-- ) {
+					if( candidate && contact.intersections[i] && candidate[0] === contact.intersections[i][0] && candidate[1] === contact.intersections[i][1] ) {
+						candidate = null;
+					}
 				}
-			}
-			
-			if( candidate ) {
-				intersections.push(candidate);
+
+				if( candidate ) {
+					contact.intersections.push(candidate);
+				}
 			}
 		}
 	}
 	
 	function solveIntersections() {
 		
-		while( intersections.length ) {
-			var ix = intersections.pop();
-			
-			// Begin the trail path
-			context.beginPath();
-			
-			var points = player.trail.slice( ix[0], ix[1] );
-			points[0] = ix[2];
-			points.push( ix[2] );
-			
-			var bounds = new Region();
-			
-			for( var i = 0, len = points.length; i < len; i++ ) {
-				var p1 = points[i];
-				var p2 = points[i+1];
-				
-				if( i === 0 ) {
-					// This is the first loop, so we need to start by moving into position
-					context.moveTo( p1.x, p1.y );
+		var contact;
+		var c = contacts.length;
+		while(c--)
+		{
+			contact = contacts[c];
+			while( contact.intersections.length ) {
+				var ix = contact.intersections.pop();
+
+				// Begin the trail path
+				context.beginPath();
+
+				var points = contact.trail.slice( ix[0], ix[1] );
+				points[0] = ix[2];
+				points.push( ix[2] );
+
+				var bounds = new Region();
+
+				for( var i = 0, len = points.length; i < len; i++ ) {
+					var p1 = points[i];
+					var p2 = points[i+1];
+
+					if( i === 0 ) {
+						// This is the first loop, so we need to start by moving into position
+						context.moveTo( p1.x, p1.y );
+					}
+					else if( p1 && p2 ) {
+						// Draw a curve between the current and next trail point
+						context.quadraticCurveTo( p1.x, p1.y, p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
+					}
+
+					bounds.inflate( p1.x, p1.y );
 				}
-				else if( p1 && p2 ) {
-					// Draw a curve between the current and next trail point
-					context.quadraticCurveTo( p1.x, p1.y, p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
-				}
-				
-				bounds.inflate( p1.x, p1.y );
+
+				var center = bounds.center();
+
+				// Solid fill, faster
+				// context.fillStyle = 'rgba(0,255,255,0.2)';
+				// context.closePath();
+
+				// Gradient fill, prettier
+				var gradient = context.createRadialGradient( center.x, center.y, 0, center.x, center.y, bounds.size() );
+				gradient.addColorStop(1,'rgba(0, 255, 255, 0.0)');
+				gradient.addColorStop(0,'rgba(0, 255, 255, 0.2)');
+				context.fillStyle = gradient;
+				context.closePath();
+
+				context.fill();
+
 			}
-			
-			var center = bounds.center();
-			
-			// Solid fill, faster
-			// context.fillStyle = 'rgba(0,255,255,0.2)';
-			// context.closePath();
-			
-			// Gradient fill, prettier
-			var gradient = context.createRadialGradient( center.x, center.y, 0, center.x, center.y, bounds.size() );
-			gradient.addColorStop(1,'rgba(0, 255, 255, 0.0)');
-			gradient.addColorStop(0,'rgba(0, 255, 255, 0.2)');
-			context.fillStyle = gradient;
-			context.closePath();
-			
-			context.fill();
-			
-		}
-		
-		// Only check for collisions every third frame to reduce lag
-		if ( frameCount % 2 == 1 ) {
-			
-			var bmp = context.getImageData(0, 0, world.width, world.height);
-			var bmpw = bmp.width;
-			var pixels = bmp.data;
-			
-			var casualties = [];
-			
-			var i = enemies.length;
-			
-			while (i--) {
-				var enemy = enemies[i];
-				
-				var ex = Math.round( enemy.x );
-				var ey = Math.round( enemy.y );
-				
-				var indices = [	
-					((ey * bmpw) + Math.round(ex - ENEMY_SIZE)) * 4, 
-					((ey * bmpw) + Math.round(ex + ENEMY_SIZE)) * 4, 
-					((Math.round(ey - ENEMY_SIZE) * bmpw) + ex) * 4, 
-					((Math.round(ey + ENEMY_SIZE) * bmpw) + ex) * 4
-				];
-				
-				var j = indices.length;
-				
-				while (j--) {
-					var index = indices[j];
-					
-					if (pixels[index + 1] === 255 && pixels[index + 2] === 255) {
-					
-						if (enemy.type === ENEMY_TYPE_BOMB || enemy.type === ENEMY_TYPE_BOMB_MOVER) {
-							handleBombInClosure(enemy);
+
+			// Only check for collisions every third frame to reduce lag
+			if ( frameCount % 2 == 1 ) {
+
+				var bmp = context.getImageData(0, 0, world.width, world.height);
+				var bmpw = bmp.width;
+				var pixels = bmp.data;
+
+				var casualties = [];
+
+				var i = enemies.length;
+
+				while (i--) {
+					var enemy = enemies[i];
+
+					var ex = Math.round( enemy.x );
+					var ey = Math.round( enemy.y );
+
+					var indices = [
+						((ey * bmpw) + Math.round(ex - ENEMY_SIZE)) * 4,
+						((ey * bmpw) + Math.round(ex + ENEMY_SIZE)) * 4,
+						((Math.round(ey - ENEMY_SIZE) * bmpw) + ex) * 4,
+						((Math.round(ey + ENEMY_SIZE) * bmpw) + ex) * 4
+					];
+
+					var j = indices.length;
+
+					while (j--) {
+						var index = indices[j];
+
+						if (pixels[index + 1] === 255 && pixels[index + 2] === 255) {
+
+							if (enemy.type === ENEMY_TYPE_BOMB || enemy.type === ENEMY_TYPE_BOMB_MOVER) {
+								handleBombInClosure(enemy);
+							}
+							else {
+								handleEnemyInClosure(enemy);
+
+								casualties.push(enemy);
+							}
+
+							enemies.splice(i, 1);
+
+							break;
 						}
-						else {
-							handleEnemyInClosure(enemy);
-							
-							casualties.push(enemy);
-						}
-						
-						enemies.splice(i, 1);
-						
-						break;
 					}
 				}
+
+				// If more than one enemy was killed, show the multiplier
+				if (casualties.length > 1) {
+					// Increase the score exponential depending on the number of
+					// casualties
+					var scoreChange = adjustScore(casualties.length * SCORE_PER_ENEMY);
+
+					notify(scoreChange, contact.x, contact.y - 10, casualties.length / 1.5, [250, 250, 100]);
+				}
 			}
-			
-			// If more than one enemy was killed, show the multiplier
-			if (casualties.length > 1) {
-				// Increase the score exponential depending on the number of
-				// casualties
-				var scoreChange = adjustScore(casualties.length * SCORE_PER_ENEMY);
-				
-				notify(scoreChange, player.x, player.y - 10, casualties.length / 1.5, [250, 250, 100]);
-			}
-			
 		}
 	}
 	
@@ -732,30 +718,35 @@ var Coil = (function(){
 		}
 	}
 	
-	function updatePlayer() {
+	function updateContacts() {
 		
-		// Interpolate towards the mouse, results in smooth
-		// movement
-		player.interpolate( mouse.x, mouse.y, 0.4 );
-		
-		// Add points to the trail, if needed
-		while( player.trail.length < player.length ) {
-			player.trail.push( new Point( player.x, player.y ) );
+		var contact;
+		var c = contacts.length;
+		while(c--)
+		{
+			contact = contacts[c];
+
+			// Interpolate towards contact, results in smooth movement
+			contact.interpolate( contact.x, contact.y, 0.4 );
+
+			// Add points to the trail, if needed
+			while( contact.trail.length < contact.length ) {
+				contact.trail.push( new Point( contact.x, contact.y ) );
+			}
+
+			// Remove the oldest point in the trail
+			contact.trail.shift();
+
 		}
-		
-		// Remove the oldest point in the trail
-		player.trail.shift();
-		
 		// No energy – no game
-		if( player.energy === 0 ) {
+		if( energy === 0 ) {
 			stop();
 		}
-		
 	}
 	
 	function updateEnemies() {
 		
-		var enemy; 
+		var enemy;
 		var padding = 60;
 		
 		var i = enemies.length;
@@ -882,40 +873,47 @@ var Coil = (function(){
 		}
 	}
 	
-	function renderPlayer() {
-		// Begin the trail path
-		context.beginPath();
-		
-		var bounds = new Region();
-		var i = player.trail.length;
-		
-		// Draw a curve through the tail
-		for( var i = 0, len = player.trail.length; i < len; i++ ) {
-			var p1 = player.trail[i];
-			var p2 = player.trail[i+1];
-			
-			if( i === 0 ) {
-				// This is the first loop, so we need to start by moving into position
-				context.moveTo( p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
+	function renderContacts() {
+		var contact;
+		var c = contacts.length;
+		while(c--)
+		{
+			contact = contacts[c];
+
+			// Begin the trail path
+			context.beginPath();
+
+			var bounds = new Region();
+			var i = contact.trail.length;
+
+			// Draw a curve through the tail
+			for( var i = 0, len = contact.trail.length; i < len; i++ ) {
+				var p1 = contact.trail[i];
+				var p2 = contact.trail[i+1];
+
+				if( i === 0 ) {
+					// This is the first loop, so we need to start by moving into position
+					context.moveTo( p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
+				}
+				else if( p2 ) {
+					// Draw a curve between the current and next trail point
+					context.quadraticCurveTo( p1.x, p1.y, p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
+				}
+
+				bounds.inflate( p1.x, p1.y );
 			}
-			else if( p2 ) {
-				// Draw a curve between the current and next trail point
-				context.quadraticCurveTo( p1.x, p1.y, p1.x + ( p2.x - p1.x ) / 2, p1.y + ( p2.y - p1.y ) / 2 );
-			}
-			
-			bounds.inflate( p1.x, p1.y );
+
+			// Draw the trail stroke
+			context.strokeStyle = '#648d93';
+			context.lineWidth = 2;
+			context.stroke();
+
+			bounds.expand( 4, 4 );
+
+			var boundsRect = bounds.toRectangle();
+
+			invalidate( boundsRect.x, boundsRect.y, boundsRect.width, boundsRect.height );
 		}
-		
-		// Draw the trail stroke
-		context.strokeStyle = '#648d93';
-		context.lineWidth = 2;
-		context.stroke();
-		
-		bounds.expand( 4, 4 );
-		
-		var boundsRect = bounds.toRectangle();
-		
-		invalidate( boundsRect.x, boundsRect.y, boundsRect.width, boundsRect.height );
 	}
 	
 	function renderEnemies() {
@@ -1022,15 +1020,13 @@ var Coil = (function(){
 		effectsTime += 0.01;
 		
 		var l1 = context3d.getAttribLocation( effectsShaderProgram, "position" );
-	    var l2 = context3d.getUniformLocation( effectsShaderProgram, "time" );
-	    var l3 = context3d.getUniformLocation( effectsShaderProgram, "resolution" );
-	    var l4 = context3d.getUniformLocation( effectsShaderProgram, "mouse" );
-	    
+		var l2 = context3d.getUniformLocation( effectsShaderProgram, "time" );
+		var l3 = context3d.getUniformLocation( effectsShaderProgram, "resolution" );
+
 		context3d.bindBuffer( context3d.ARRAY_BUFFER, effectsBuffer );
 		
 		context3d.uniform1f( l2, effectsTime );
-	    context3d.uniform2f( l3, world.width, world.height );
-	    context3d.uniform2f( l4, mouse.x, mouse.y );
+		context3d.uniform2f( l3, world.width, world.height );
 		
 		var i = NUMBER_OF_EFFECTS;
 		
@@ -1042,10 +1038,10 @@ var Coil = (function(){
 		}
 		
 		context3d.vertexAttribPointer( l1, 2, context3d.FLOAT, false, 0, 0 );
-	    context3d.enableVertexAttribArray( l1 );
+		context3d.enableVertexAttribArray( l1 );
 		
 		context3d.drawArrays(context3d.TRIANGLES, 0, 6);
-    	context3d.disableVertexAttribArray(l1);
+		context3d.disableVertexAttribArray(l1);
 	}
 	
 	function renderHeader() {
@@ -1058,7 +1054,7 @@ var Coil = (function(){
 			TIME_LABEL = 'TIME:',
 			SCORE_LABEL = 'SCORE:';
 		
-		player.animatedEnergy += ( player.energy - player.animatedEnergy ) * 0.2;
+		animatedEnergy += ( energy - animatedEnergy ) * 0.2;
 		
 		context.fillStyle = 'rgba(0,0,0,0.5)';
 		context.fillRect( 0, 0, world.width, HEADER_HEIGHT );
@@ -1072,7 +1068,7 @@ var Coil = (function(){
 			context.fillText( ENERGY_LABEL, 0, 8 );
 			context.translate( 56, 0 );
 			
-			// Energy bar 
+			// Energy bar
 			context.save();
 			context.fillStyle = 'rgba(40,40,40,0.8)';
 			context.fillRect( 0, 2, energyBarWidth, energyBarHeight );
@@ -1081,7 +1077,7 @@ var Coil = (function(){
 			context.shadowBlur = 14;
 			context.shadowColor = "rgba(0,240,255,0.9)";
 			context.fillStyle = 'rgba(0,200,220, 0.8)';
-			context.fillRect( 0, 2, ( player.animatedEnergy / 100 ) * energyBarWidth, energyBarHeight );
+			context.fillRect( 0, 2, ( animatedEnergy / 100 ) * energyBarWidth, energyBarHeight );
 			context.restore();
 			
 			context.translate( 122, 0 );
@@ -1164,7 +1160,7 @@ var Coil = (function(){
 	 * Invoked when an enemy dies of age.
 	 */
 	function handleEnemyDeath( entity ) {
-		player.adjustEnergy( ENERGY_PER_ENEMY_DEATH );
+		adjustEnergy( ENERGY_PER_ENEMY_DEATH );
 		multiplier.reset();
 		
 		emitParticles( '#eeeeee', entity.x, entity.y, 3, 15 );
@@ -1186,7 +1182,7 @@ var Coil = (function(){
 	 * Invoked when an enemy has been enclosed.
 	 */
 	function handleEnemyInClosure( entity ) {
-		player.adjustEnergy( ENERGY_PER_ENEMY_ENCLOSED );
+		adjustEnergy( ENERGY_PER_ENEMY_ENCLOSED );
 		
 		var mb = multiplier.major;
 		multiplier.increase();
@@ -1211,7 +1207,7 @@ var Coil = (function(){
 	 * Invoked when a bomb has been enclosed.
 	 */
 	function handleBombInClosure( entity ) {
-		player.adjustEnergy( ENERGY_PER_BOMB_ENCLOSED );
+		adjustEnergy( ENERGY_PER_BOMB_ENCLOSED );
 		multiplier.reset();
 		
 		notify( ENERGY_PER_BOMB_ENCLOSED+'♥', entity.x, entity.y, 1.2, [230,90,90] );
@@ -1231,7 +1227,7 @@ var Coil = (function(){
 		}
 		
 		var s = (-s1.y * (p1.x - p3.x) + s1.x * (p1.y - p3.y)) / (-s2.x * s1.y + s1.x * s2.y);
-    	var t = ( s2.x * (p1.y - p3.y) - s2.y * (p1.x - p3.x)) / (-s2.x * s1.y + s1.x * s2.y);
+		var t = ( s2.x * (p1.y - p3.y) - s2.y * (p1.x - p3.x)) / (-s2.x * s1.y + s1.x * s2.y);
 		
 		if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
 			return {
@@ -1253,53 +1249,116 @@ var Coil = (function(){
 		event.preventDefault();
 	}
 	
-	function onDocumentMouseDownHandler(event){
-		mouse.down = true;
-	}
-	
-	function onDocumentMouseMoveHandler(event){
-		mouse.previousX = mouse.x;
-		mouse.previousY = mouse.y;
-		
-		mouse.x = event.clientX - (window.innerWidth - world.width) * 0.5;
-		mouse.y = event.clientY - (window.innerHeight - world.height) * 0.5;
-		
-		mouse.velocityX = Math.abs( mouse.x - mouse.previousX ) / world.width;
-		mouse.velocityY = Math.abs( mouse.y - mouse.previousY ) / world.height;
-	}
-	
-	function onDocumentMouseUpHandler(event) {
-		mouse.down = false;
-	}
-	
-	function onCanvasTouchStartHandler(event) {
-		if(event.touches.length == 1) {
-			event.preventDefault();
-			
-			mouse.x = event.touches[0].pageX - (window.innerWidth - world.width) * 0.5;
-			mouse.y = event.touches[0].pageY - (window.innerHeight - world.height) * 0.5;
-			
-			mouse.down = true;
+	function findContactIndex(id)
+	{
+		var c = contacts.length;
+		while(c--)
+		{
+			if(contacts[c].id === id)
+				return c;
 		}
+		return -1;
 	}
-	
-	function onCanvasTouchMoveHandler(event) {
-		if(event.touches.length == 1) {
-			event.preventDefault();
 
-			mouse.x = event.touches[0].pageX - (window.innerWidth - world.width) * 0.5;
-			mouse.y = event.touches[0].pageY - (window.innerHeight - world.height) * 0.5 - 20;
+	function contactStart(id,x,y)
+	{
+		var c = findContactIndex(id);
+		if(c<0)
+		{
+			var contact = new Contact;
+			contact.id = id;
+			contact.x = x;
+			contact.y = y;
+			contact.previousX = contact.x;
+			contact.previousY = contact.y;
+			contact.velocityX = 0.0;
+			contact.velocityY = 0.0;
+			contacts.push( contact );
 		}
 	}
-	
-	function onCanvasTouchEndHandler(event) {
-		mouse.down = false;
+
+	function contactEnd(id)
+	{
+		var c = findContactIndex(id);
+		if(c<0)
+			return;
+		contacts.splice(c,1);
 	}
-	
+
+	function contactMove(id,x,y)
+	{
+		var c = findContactIndex(id);
+		if(c<0)
+			return;
+		var contact = contacts[c];
+		contact.previousX = contact.x;
+		contact.previousY = contact.y;
+		contact.x = x;
+		contact.y = y;
+		contact.velocityX = Math.abs(contact.x - contact.previousX) / world.width;
+		contact.velocityY = Math.abs(contact.y - contact.previousY) / world.height;
+	}
+
+	function onDocumentMouseDownHandler(event)
+	{
+		contactStart(-1,
+			event.pageX - (window.innerWidth - world.width) * .5,
+			event.pageY - (window.innerHeight - world.height) * .5);
+	}
+
+	function onDocumentMouseMoveHandler(event)
+	{
+		contactMove(-1,
+			event.pageX - (window.innerWidth - world.width) * .5,
+			event.pageY - (window.innerHeight - world.height) * .5);
+	}
+
+	function onDocumentMouseUpHandler(event)
+	{
+		contactEnd(-1);
+	}
+
+	function onCanvasTouchStartHandler(event)
+	{
+		event.preventDefault();
+		var t = event.touches.length;
+		while(t--)
+		{
+			var touch = event.touches[t];
+			contactStart(touch.identifier,
+				touch.pageX - (window.innerWidth - world.width) * .5,
+				touch.pageY - (window.innerHeight - world.height) * .5);
+		}
+	}
+
+	function onCanvasTouchMoveHandler(event)
+	{
+		event.preventDefault();
+		var t = event.touches.length;
+		while(t--)
+		{
+			var touch = event.touches[t];
+			contactMove(touch.identifier,
+				touch.pageX - (window.innerWidth - world.width) * .5,
+				touch.pageY - (window.innerHeight - world.height) * .5);
+		}
+	}
+
+	function onCanvasTouchEndHandler(event)
+	{
+		event.preventDefault();
+		var t = event.changedTouches.length;
+		while(t--)
+		{
+			var touch = event.changedTouches[t];
+			contactEnd(touch.identifier);
+		}
+	}
+
 	function onWindowResizeHandler() {
 		// Update the game size
-		world.width = TOUCH_INPUT ? window.innerWidth : DEFAULT_WIDTH;
-		world.height = TOUCH_INPUT ? window.innerHeight : DEFAULT_HEIGHT;
+		world.width = window.innerWidth;
+		world.height = window.innerHeight;
 		
 		// Resize the container
 		container.width( world.width );
@@ -1310,8 +1369,8 @@ var Coil = (function(){
 		canvas.height = world.height;
 		
 		// Determine the x/y position of the canvas
-		var cx = Math.max( (window.innerWidth - world.width) * 0.5, 1 );
-		var cy = Math.max( (window.innerHeight - world.height) * 0.5, 1 );
+		var cx = Math.max( (window.innerWidth - world.width) * 0.5, 0 );
+		var cy = Math.max( (window.innerHeight - world.height) * 0.5, 0 );
 		
 		// Update the position of the canvas
 		container.css( {
@@ -1327,6 +1386,8 @@ var Coil = (function(){
 		
 		// Update the WebGL canvas if it exists
 		if( effectsEnabled ) {
+			context3d.viewport(0, 0, world.width, world.height);
+
 			// Resize the canvas
 			canvas3d.width = world.width;
 			canvas3d.height = world.height;
@@ -1351,23 +1412,25 @@ function Entity( x, y ) {
 Entity.prototype = new Point();
 
 /**
- * Player entity.
+ * Contact entity.
  */
-function Player() {
+function Contact() {
+	this.x = 0;
+	this.y = 0;
+	this.previousX = 0;
+	this.previousY = 0;
+	this.velocityX = 0;
+	this.velocityY = 0;
+	this.id = -1;
 	this.trail = [];
+	this.intersections = [];
 	this.size = 8;
 	this.length = 45;
-	this.energy = 100;
-	this.animatedEnergy = 0;
-	
-	this.adjustEnergy = function( offset ) {
-		this.energy = Math.min( Math.max( this.energy + offset, 0 ), 100 );
-	}
 }
-Player.prototype = new Entity();
+Contact.prototype = new Entity();
 
 /**
- * Player entity.
+ * Enemy entity.
  */
 function Enemy() {
 	this.scale = 0.01;
@@ -1457,4 +1520,3 @@ function Multiplier( step, max ) {
 		}
 	}
 }
-

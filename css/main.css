@@ -19,12 +19,13 @@ body, html {
 
 header {
 	position: relative;
-	width: 100%;
+	width: 25%;
 	height: 27px;
 	margin: 0;
 	padding: 0 8px 8px 8px;
 	overflow: hidden;
 	z-index: 5;
+	float: right;
 	
 	background: rgba( 30, 50, 50, 0.5 );
 	color: #eee;
@@ -143,12 +144,12 @@ a[href="http://www.w3counter.com"] {
 
 #game {
 	background: url('../images/background.jpg');
-	
+	background-size: 100% 100%;
+
 	position: absolute;
 	display: none;
-	border: 1px solid #222222;
-	border-radius: 2px;
-	
+	border: none;
+
 	font-family: 'Ubuntu', Arial, Helvetica, sans-serif;
 	font-size: 12px;
 	
@@ -188,6 +189,7 @@ a[href="http://www.w3counter.com"] {
 	
 	-webkit-box-shadow: 0 0 20px rgba(0,250,200,0.1);
 	   -moz-box-shadow: 0 0 20px rgba(0,250,200,0.1);
+	     -o-box-shadow: 0 0 20px rgba(0,250,200,0.1);
 	        box-shadow: 0 0 20px rgba(0,250,200,0.1);
 	
 	background-image: -moz-radial-gradient(center, circle closest-corner, rgba(50,200,200,0.3) 0%, rgba(50,200,200,0) 100%);
@@ -230,6 +232,59 @@ a[href="http://www.w3counter.com"] {
 		margin-bottom: 10px;
 	}
 	
+	#menu table {
+		text-align: left;
+		font-size: 12px;
+	}
+	
+	#menu table th,
+	#menu table td {
+		padding: 4px 5px;
+	}
+	
+	#menu table th {
+		font-weight: bold;
+		padding-top: 0;
+		padding-bottom: 5px;
+	}
+	
+	#menu table tr {
+		width: auto;
+		display: inline-block;
+	}
+	
+	#menu table tr:nth-child(2n) {
+		background: rgba(255,255,255,0.1);
+		border-radius: 2px;
+	}
+	
+	#menu table tr.yours {
+		background: rgba(210,255,210,0.3);
+	}
+	
+	#menu input[type="text"] {
+		padding: 5px;
+		font-size: 16px;
+		margin-bottom: 15px;
+		border-radius: 4px;
+		background: rgba(255,255,255,0.9);
+		border: none;
+		
+		-webkit-transition: all .1s ease-out;
+	       -moz-transition: all .1s ease-out;
+	         -o-transition: all .1s ease-out;
+	            transition: all .1s ease-out;
+	}
+	
+		#menu input[type="text"]:focus {
+			background: rgba(255,255,255,1.0);
+			
+			-webkit-box-shadow: 0 0 10px rgba(0,250,200,0.3);
+			   -moz-box-shadow: 0 0 10px rgba(0,250,200,0.3);
+			     -o-box-shadow: 0 0 10px rgba(0,250,200,0.3);
+			        box-shadow: 0 0 10px rgba(0,250,200,0.3);
+		}
+	
 	#menu .button {
 		display: inline-block;
 		padding: 6px 18px 6px 18px;
@@ -256,7 +311,12 @@ a[href="http://www.w3counter.com"] {
 			        box-shadow: 0 0 10px rgba(0,250,200,0.2);
 		}
 	
-	#menu .welcome {
+	#menu .welcome,
+	#menu .highscore-output {
+		display: inline-block;
+	}
+	
+	.winner #menu .highscore-input {
 		display: inline-block;
 	}
 
